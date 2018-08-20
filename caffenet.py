@@ -563,20 +563,18 @@ class CaffeNet(nn.Module):
             mean_blob.ParseFromString(open(self.mean_file, 'rb').read())
 
             if self.net_info['props'].has_key('input_shape'):
-                channels = int(self.net_info['props']['input_shape']['dim'][1])
-                height = int(self.net_info['props']['input_shape']['dim'][2])
-                width = int(self.net_info['props']['input_shape']['dim'][3])
+                geom = [int(x) for x in self.net_info['props']['input_shape']['dim'][1:]]
             else:
-                channels = int(self.net_info['props']['input_dim'][1])
-                height = int(self.net_info['props']['input_dim'][2])
-                width = int(self.net_info['props']['input_dim'][3])
+                geom = [int(x) for x in self.net_info['props']['input_dim'][1:]]
 
+            channels = geom[0]
+            size = torch.prod(*geom)
             mu = np.array(mean_blob.data)
-            mu.resize(channels, height, width)
+            mu.resize(size)
             mu = mu.mean(1).mean(1)
-            mean_img = torch.from_numpy(mu).view(channels, 1, 1).expand(channels, height, width).float()
+            mean_img = torch.from_numpy(mu).view(channels, 1, 1).expand(size).float()
             
-            self.register_buffer('mean_img', torch.zeros(channels, height, width))
+            self.register_buffer('mean_img', torch.zeros(size))
             self.mean_img.copy_(mean_img)
 
         model = parse_caffemodel(caffemodel)
@@ -634,9 +632,9 @@ class CaffeNet(nn.Module):
             elif ltype == 'InnerProduct':
                 print('load weights %s' % lname)
                 if type(self.models[lname]) == nn.Sequential:
-                    self.models[lname][1].weight.data.copy_(torch.from_numpy(np.array(lmap[lname].blobs[0].data)))
+                    self.models[lname][1].weight.data.copy_(torch.from_numpy(np.array(lmap[lname].blobs[0].data)).view( -1, self.models[lname][1].weight.shape[1] ) )
                     if len(lmap[lname].blobs) > 1:
-                        self.models[lname][1].bias.data.copy_(torch.from_numpy(np.array(lmap[lname].blobs[1].data)))
+                        self.models[lname][1].bias.data.copy_( torch.from_numpy(np.array(lmap[lname].blobs[1].data)))
                 else:
                     self.models[lname].weight.data.copy_(torch.from_numpy(np.array(lmap[lname].blobs[0].data)))
                     if len(lmap[lname].blobs) > 1:
@@ -667,6 +665,7 @@ class CaffeNet(nn.Module):
         if input_width != None:
             blob_width['data'] = input_width
         if props.has_key('input_shape'):
+
             blob_channels['data'] = int(props['input_shape']['dim'][1])
             blob_height['data'] = int(props['input_shape']['dim'][2])
             blob_width['data'] = int(props['input_shape']['dim'][3])
